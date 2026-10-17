@@ -1,155 +1,192 @@
 # R Programming Mini Project — Image Recognition and Classification with Keras
 
 ## Project Title
-**Handwritten Digit Recognition with a Dense Neural Network vs a CNN in R (MNIST)**
+**Classifying Aeroplanes vs Cars from JPEG Images using EBImage and Keras in R**
 
 ## Objective
-To build a complete deep learning image-recognition pipeline in R using `keras3` — loading image data,
-exploring it, pre-processing it, training two different network architectures, comparing them, and
-finally using the trained model to recognise digits read back from external `.png` image files.
-
-## Problem Description
-The project recognises handwritten digits (0–9) from 28×28 grayscale images. A fully connected
-(dense) neural network is trained first as a baseline, then a Convolutional Neural Network (CNN) is
-trained on the same data. The two are compared on test loss and accuracy, the better model is
-evaluated in detail with a confusion matrix and per-class precision / recall / F1, its mistakes are
-inspected visually, and the model is then applied to image *files* on disk — the way a real
-recognition system receives its input — before being saved for reuse.
+To build a complete image classification pipeline in R — reading raw JPEG images, exploring them,
+resizing and reshaping them into model-ready features, training a fully connected neural network
+with Keras, and evaluating it on held-out images — then to check **how trustworthy that result
+actually is**, and finally to **improve it**.
 
 ## Reference
-Based on ***Image Recognition & Classification with Keras in R*** by Dr. Bharatendra Rai
-(Deep Learning with R / Keras playlist) — https://youtu.be/iExh0qj2Ouo
+Follows ***Image Recognition & Classification with Keras in R | TensorFlow for Machine Intelligence
+by Google*** by Dr. Bharatendra Rai — https://youtu.be/iExh0qj2Ouo
+(author's R code: https://github.com/bkrai/DeepLearningR)
+
+The notebook is organised around the video's own timestamps:
+
+| Time | Step | Section |
+|---|---|---|
+| 0:00 | Load Packages | 1 |
+| 0:29 | Read Images | 2 |
+| 4:08 | Explore | 3 |
+| 6:16 | Resize | 4 |
+| 7:23 | Reshape | 5 |
+| 8:45 | Row Bind | 6 |
+| 11:49 | One Hot Encoding | 7 |
+| 12:42 | Create Model | 8 |
+| 16:02 | Compile | 9 |
+| 16:38 | Fit Model | 10 |
+| 18:49 | Evaluation and Prediction (train data) | 11 |
+| 22:20 | Evaluation and Prediction (test data) | 12 |
+
+Sections 13–14 are an addition of my own (seed stability, leave-one-out cross-validation, training
+budget comparison and conclusions).
 
 ## Dataset
-**MNIST handwritten digits**, bundled with Keras (`dataset_mnist()`) — no manual download needed.
+12 JPEG images, reused from `Lab/EXP_4/images/` in this repository:
 
-| Property | Value |
-|---|---|
-| Total images | 70,000 grayscale |
-| Training set | 60,000 (48,000 train + 12,000 validation via `validation_split = 0.2`) |
-| Test set | 10,000 |
-| Image size | 28 × 28 × 1 |
-| Pixel range | 0 (black background) – 255 (white stroke) |
-| Classes | 10 (digits 0–9), near-balanced at 9.0%–11.2% per class |
+| Class | Label | Files |
+|---|---|---|
+| Aeroplanes | **0** | `p1.jpg` – `p6.jpg` |
+| Cars | **1** | `c1.jpg` – `c6.jpg` |
+
+The images arrive at very different resolutions (461×433 up to 5000×3333), which is exactly why the
+resize step exists. Split, following the video:
+
+- **Training (10 images):** `p1`–`p5` and `c1`–`c5`
+- **Test (2 images):** `p6` and `c6`
+
+Each image is resized to 28×28×3 and flattened to a **2352**-value feature vector.
 
 ## R Packages / Libraries Used
 | Package | Purpose |
 |---|---|
-| `keras3` | Building, compiling, training, evaluating and saving the networks; image file I/O |
-| `caret` | Confusion matrix and per-class Sensitivity / Specificity / Precision / F1 |
-| `ggplot2` | Class distribution, learning curves, model comparison, confusion-matrix heatmap |
-| `dplyr`, `tidyr` | Reshaping result tables for plotting |
+| `EBImage` | `readImage()`, `display()`, `resize()`, `combine()`/`tile()` — reading and preparing images |
+| `keras3` | `array_reshape()`, `to_categorical()`, model building, compiling, fitting, evaluating |
 | `reticulate` | `py_capture_output()` to pull the Keras training log into the notebook |
 
+`EBImage` is a Bioconductor package, installed with the two lines given in the video description:
+```r
+install.packages("BiocManager")
+BiocManager::install("EBImage")
+```
+
 ## Major Operations Performed
-1. **Data Loading** — `dataset_mnist()` unpacked with the `%<-%` multi-assignment operator.
-2. **Exploratory Analysis** — array shapes and pixel ranges; class-distribution table and grouped bar
-   chart; a 5×5 grid of sample digits; the **mean image of each class**; mean-pixel-intensity
-   boxplots per digit.
-3. **Pre-processing** — `array_reshape()` to 784-vectors (dense) and to `(28, 28, 1)` (CNN);
-   scaling to `[0, 1]`; `to_categorical()` one-hot encoding of labels.
-4. **Model A — Dense baseline** — 512 → 256 → 10 with ReLU, dropout 0.3 twice, softmax output;
-   Adam (lr 1e-3), categorical cross-entropy, 15 epochs, batch size 128.
-5. **Model B — CNN** — Conv2D(32, 3×3) → Conv2D(64, 3×3) → MaxPooling(2×2) → Dropout(0.25) →
-   Flatten → Dense(128) → Dropout(0.5) → Dense(10, softmax); same optimiser, 10 epochs.
-6. **Training Analysis** — captured epoch-by-epoch Keras logs, per-epoch history tables and
-   `plot(history)` learning curves for both models.
-7. **Model Comparison** — side-by-side table and faceted bar chart of parameters, test loss and
-   test accuracy.
-8. **Detailed Evaluation** — 10×10 confusion matrix, overall Accuracy / Kappa with 95% CI, per-class
-   metrics, a confusion-matrix heatmap, the top-10 most confused digit pairs, and a gallery of the
-   15 mistakes the model was most confident about.
-9. **External Image Recognition** — test digits written to `.png` with `image_array_save()`, then
-   read back with `image_load()` / `image_to_array()`, reshaped and classified, scored against the
-   true label stored in each file name.
-10. **Model Persistence** — `save_model()` to `mnist_cnn.keras`, reloaded with `load_model()` and
-    re-evaluated to confirm the reloaded model reproduces the original accuracy.
+1. **Load packages** — EBImage + keras3 (TensorFlow backend), reproducible seed.
+2. **Read images** — all 12 JPEGs read in a single `for` loop with `readImage()`.
+3. **Explore** — `print()` dimensions, `display()` a plane and a car, `summary()` showing pixels
+   already scaled to 0–1, RGB intensity `hist()`ograms, and a table of every image's original size.
+4. **Resize** — all images to 28×28 (originals kept aside so results can be shown as real pictures).
+5. **Reshape** — `array_reshape()` to 28×28×3.
+6. **Row bind** — `rbind()` into a 10×2352 training matrix and a 2×2352 test matrix; labels 0/1.
+7. **One hot encoding** — `to_categorical()` into two dummy columns.
+8. **Create model** — sequential 2352 → 256 (ReLU) → 128 (ReLU) → 2 (softmax).
+9. **Compile** — `binary_crossentropy`, `optimizer_rmsprop()`, accuracy.
+10. **Fit** — 30 epochs, batch size 32, 20% validation split, with learning curves.
+11. **Evaluation & prediction (train)** — loss/accuracy, confusion matrix, per-image probabilities,
+    and the misclassified pictures displayed.
+12. **Evaluation & prediction (test)** — same on the two held-out images.
+13. **Reliability check (my addition)** — same model and split re-run under 10 seeds;
+    leave-one-out cross-validation over all 12 images; three training budgets compared.
+14. **Diagnosis** — what the numbers do and do not show, and where the real bottleneck is.
+15. **Improving the accuracy (my addition)** — transfer learning: VGG16 pre-trained on ImageNet used
+    as a frozen feature extractor (`include_top = FALSE`, `pooling = "avg"`), giving 512 features per
+    image instead of 2352 raw pixels. Includes PCA plots of both representations, the same
+    leave-one-out test, a **random-weights control**, and the video's own split re-run.
+16. **Final conclusion** — what improved the accuracy and why.
+
+> **Note on API changes:** the video calls `predict_classes()` and `predict_proba()`. Both have been
+> removed from Keras, so the notebook uses `predict()` for probabilities and `max.col(...) - 1` for
+> the class label — same result. Likewise `keras3` takes `input_shape` on
+> `keras_model_sequential()` rather than inside the first `layer_dense()`; the network is identical.
+> Keras writes training progress to Python's stdout, which the R kernel does not capture, so `fit()`
+> is wrapped in `reticulate::py_capture_output()` to keep the log in the notebook.
 
 ## Instructions to Execute the Project
-1. Clone this repository:
-   ```bash
-   git clone <your-repo-url>
-   cd <repo-folder>/Mini_Project
-   ```
-2. Open `R_Mini_Project_Image_Recognition_Keras_23102A0001.ipynb` in **Google Colab** and set the
-   runtime to **R** (Runtime → Change runtime type → R).
-3. Run the setup cell. It installs `keras3`, `caret`, `ggplot2`, `dplyr` and `tidyr` if they are
-   missing. On a fresh runtime the Python/TensorFlow backend is also needed once — run
-   `keras3::install_keras(backend = "tensorflow")` and restart the session.
-4. Run all cells. The dataset downloads automatically; no files need to be uploaded.
-5. Expect roughly 2–3 s per epoch for Model A and 13–21 s per epoch for Model B on CPU
-   (≈ 3 minutes in total); a GPU runtime is faster but not required.
-
-> **Note on the environment:** `keras3` is used rather than the older `keras` package, since `keras3`
-> is the current R interface and works with present-day TensorFlow (2.21 here). Keras writes its
-> training progress to Python's stdout, which the R kernel does not capture on its own, so the `fit()`
-> calls are wrapped in `reticulate::py_capture_output()` to keep the training log inside the notebook.
-> `set_random_seed(42)` is set, and re-running reproduced identical metrics.
+1. Clone this repository and open `Mini_Project/` .
+2. Open `R_Mini_Project_Image_Classification_Keras_23102A0001.ipynb` in **Google Colab**, and set
+   Runtime → Change runtime type → **R**.
+3. Make the images available. The notebook searches `images/`, `../Lab/EXP_4/images/`,
+   `Lab/EXP_4/images/` and `/content/images/` — in Colab, upload the 12 files into a folder named
+   `images`.
+4. Run the setup cell. It installs `BiocManager` + `EBImage` and `keras3` if missing; on a fresh
+   runtime also run `keras3::install_keras(backend = "tensorflow")` once.
+5. Run all cells. Total runtime is a few minutes on CPU — the networks are small and there are only
+   12 images. No GPU needed.
 
 ## Important Results / Output
 
-**Model architectures**
+**Model architecture** (matches the parameter count worked out by hand in the video)
 ```
-Model A — "dense_baseline"                    Model B — "mnist_cnn"
-Layer (type)        Output Shape   Param #    Layer (type)         Output Shape      Param #
-dense (Dense)       (None, 512)    401,920    conv2d (Conv2D)      (None,26,26,32)       320
-dropout (Dropout)   (None, 512)          0    conv2d_1 (Conv2D)    (None,24,24,64)    18,496
-dense_1 (Dense)     (None, 256)    131,328    max_pooling2d        (None,12,12,64)         0
-dropout_1 (Dropout) (None, 256)          0    dropout_2 (Dropout)  (None,12,12,64)         0
-dense_2 (Dense)     (None,  10)      2,570    flatten (Flatten)    (None, 9216)            0
-                                              dense_3 (Dense)      (None,  128)    1,179,776
-Total params: 535,818 (2.04 MB)               dropout_3 (Dropout)  (None,  128)            0
-                                              dense_4 (Dense)      (None,   10)        1,290
-
-                                              Total params: 1,199,882 (4.58 MB)
+Layer (type)        Output Shape    Param #
+dense (Dense)       (None, 256)     602,368     = 2352 * 256 + 256
+dense_1 (Dense)     (None, 128)      32,896     =  256 * 128 + 128
+dense_2 (Dense)     (None,   2)         258     =    128 * 2 +   2
+Total params: 635,522 (2.42 MB)
 ```
 
-(The layer-name counters continue from Model A into Model B, which is why the CNN's dense layers are
-numbered `dense_3` / `dense_4`.)
-
-**Test set evaluation (10,000 images)**
-| Model | Parameters | Test loss | Test accuracy | Test error |
-|---|---|---|---|---|
-| A: Dense 784-512-256-10 | 535,818 | 0.0728 | **98.10%** | 1.90% |
-| B: CNN 32/64 conv + dense 128 | 1,199,882 | 0.0305 | **99.21%** | 0.79% |
-
-CNN: Accuracy 0.9921, Kappa 0.9912, 95% CI [0.9902, 0.9937] — **79 misclassified out of 10,000**.
-
-**Per-class metrics (CNN)** — hardest and easiest classes
-| Digit | Sensitivity | Precision | F1 |
+**Single run (sections 11–12)**
+| Data | Images | Loss | Accuracy |
 |---|---|---|---|
-| 9 (hardest) | 0.9762 | 0.9970 | 0.9865 |
-| 7 | 0.9942 | 0.9836 | 0.9889 |
-| 1 (easiest) | 0.9974 | 0.9974 | 0.9974 |
+| Training | 10 | 0.5807 | **0.80** (8 of 10) |
+| Test | 2 | — | **0.50** (1 of 2) |
 
-**Most confused digit pairs (CNN)**
-| Actual | Predicted as | Count |
-|---|---|---|
-| 2 | 7 | 8 |
-| 9 | 4 | 7 |
-| 5 | 3 | 5 |
-| 7 | 2 | 5 |
-| 9 | 5 | 5 |
-| 9 | 7 | 5 |
+Misclassified in training: `c4.jpg`, `c5.jpg` — both cars read as planes. On test, the car `c6.jpg`
+was called a plane with 97.9% confidence. Every error points the same way.
 
-**Recognition from external `.png` files**
-| File | True | Predicted | Correct | Confidence | Runner-up |
-|---|---|---|---|---|---|
-| digit_004_true0.png | 0 | 0 | TRUE | 1.000000 | 6 (2.41e-08) |
-| digit_016_true5.png | 5 | 5 | TRUE | 1.000000 | 3 (3.39e-08) |
-| digit_047_true1.png | 1 | 1 | TRUE | 1.000000 | 3 (2.68e-07) |
-| digit_102_true0.png | 0 | 0 | TRUE | 1.000000 | 6 (1.32e-09) |
-| digit_211_true4.png | 4 | 4 | TRUE | 1.000000 | 9 (6.18e-10) |
+**Reliability check (section 13)**
+| Check | Result |
+|---|---|
+| Training accuracy over 10 seeds | mean 0.94, sd 0.07, range 0.80 – 1.00 |
+| Test accuracy over 10 seeds | mean 0.75, sd 0.264 — exactly **0.5 five times and 1.0 five times** |
+| **Leave-one-out CV (all 12 images)** | **0.5833 (7 of 12)** vs 0.50 baseline |
+| LOOCV predictions | 11 of 12 images predicted "plane", including 5 of the 6 cars |
 
-All 5 files recognised correctly. Saved model (`mnist_cnn.keras`, 13.8 MB) reloaded and reproduced
-test accuracy 0.9921 exactly.
+**Training budget comparison**
+| Epochs | Batch | Updates/epoch | LOOCV accuracy | Cars found |
+|---|---|---|---|---|
+| 30 | 32 | 1 | 0.5833 | 1 of 12 |
+| 200 | 32 | 1 | 0.5833 | 3 of 12 |
+| 200 | 4 | 3 | **0.6667** | 4 of 12 |
+
+**Improving the accuracy — transfer learning (section 15)**
+
+Accuracy is judged by leave-one-out cross-validation over all 12 images, since a 2-image test set
+cannot tell a good model from a lucky one. The classifier is held constant throughout — same
+256-128-2 network, same RMSprop, same 30 epochs, same batch size. **Only the input representation
+changes.**
+
+| Representation | Features/image | LOOCV accuracy | Cars found |
+|---|---|---|---|
+| Raw pixels 28×28×3 (the video) | 2352 | 0.5833 | 1 of 6 |
+| VGG16 architecture, **random** weights (control) | 512 | 0.5000 | 3 of 6 |
+| **VGG16 features, ImageNet weights** | 512 | **1.0000** | **6 of 6** |
+
+On the video's own train/test split the transfer-learning model reaches **1.00 training and 1.00 test
+accuracy** — and unlike the baseline, leave-one-out confirms it classifies all 12 images correctly
+rather than getting the lucky two right.
 
 ## Conclusion
-The CNN reduced the test error rate from 1.90% to 0.79% — a **58% reduction** — while training for
-fewer epochs than the dense baseline, because convolution preserves the spatial relationship between
-neighbouring pixels that flattening to a 784-vector throws away. The dense model also overfitted
-(training accuracy 99.11% against validation 98.03%, with validation loss rising after epoch 8),
-whereas the CNN's training and validation curves stayed together (99.06% vs 99.04%). The remaining
-errors are concentrated in digit pairs that genuinely share strokes — 2/7, 9/4, 5/3 — and the
-model's most confident mistakes are malformed digits a human reader would also hesitate over. A full
-discussion, along with limitations and possible extensions, is in section 10 of the notebook.
+The pipeline reproduces the video faithfully and the parameter count matches exactly. The accuracy,
+however, does not reproduce — and section 13 shows why rather than guessing. With a **2-image test
+set**, the only possible scores are 0%, 50% and 100%, and re-running the identical model under 10
+seeds returned 50% five times and 100% five times. The video's 100% is one of the lucky draws.
+
+Leave-one-out cross-validation over all 12 images gives **0.5833**, barely above the 0.50 baseline of
+always guessing "plane" — which is essentially what the model does, predicting "plane" for 11 of 12
+images. Training 20× longer with smaller batches raises this only to **0.6667**, so the 30-epoch
+setting is under-trained (batch 32 > 10 images means one gradient update per epoch) but that is not
+the real problem: **12 images described by 2352 raw pixel values each** gives 196× more features than
+examples, so nothing the network learns transfers to a new picture.
+
+**The fix, implemented and measured in section 15, is transfer learning.** Replacing the raw pixels
+with the 512 features VGG16 produces after training on 1.2 million ImageNet photographs lifts
+leave-one-out accuracy from **0.5833 to 1.0000** — every image correct, all 6 cars found — without
+changing the classifier, the optimiser or the number of epochs.
+
+The **random-weights control** is what makes this conclusive: the identical VGG16 architecture with
+untrained weights scores **0.5000**, i.e. chance. So the gain is not explained by the deeper network,
+the larger 224×224 input or the smaller feature count — it comes specifically from the knowledge
+transferred from ImageNet. The PCA plots show the same thing visually: planes and cars are mixed
+together in raw-pixel space but fall into two clearly separated groups in VGG16 feature space, before
+any training happens at all.
+
+With a dataset this small, how the data is represented matters far more than the size of the network,
+the number of epochs or the choice of optimiser — and an accuracy figure from a 2-image test set is
+not a measurement at all.
+
+**If taken further:** collect hundreds of images per class rather than six; fine-tune the last VGG16
+block instead of freezing all of it; add data augmentation (flips, shifts, small rotations); and
+always report cross-validated accuracy rather than a single small split.
