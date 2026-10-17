@@ -6,8 +6,8 @@
 ## Objective
 To build a complete image classification pipeline in R — reading raw JPEG images, exploring them,
 resizing and reshaping them into model-ready features, training a fully connected neural network
-with Keras, and evaluating it on held-out images — and then to check **how trustworthy that result
-actually is**.
+with Keras, and evaluating it on held-out images — then to check **how trustworthy that result
+actually is**, and finally to **improve it**.
 
 ## Reference
 Follows ***Image Recognition & Classification with Keras in R | TensorFlow for Machine Intelligence
@@ -80,7 +80,12 @@ BiocManager::install("EBImage")
 12. **Evaluation & prediction (test)** — same on the two held-out images.
 13. **Reliability check (my addition)** — same model and split re-run under 10 seeds;
     leave-one-out cross-validation over all 12 images; three training budgets compared.
-14. **Conclusion** — what the numbers do and do not show, and how to fix it.
+14. **Diagnosis** — what the numbers do and do not show, and where the real bottleneck is.
+15. **Improving the accuracy (my addition)** — transfer learning: VGG16 pre-trained on ImageNet used
+    as a frozen feature extractor (`include_top = FALSE`, `pooling = "avg"`), giving 512 features per
+    image instead of 2352 raw pixels. Includes PCA plots of both representations, the same
+    leave-one-out test, a **random-weights control**, and the video's own split re-run.
+16. **Final conclusion** — what improved the accuracy and why.
 
 > **Note on API changes:** the video calls `predict_classes()` and `predict_proba()`. Both have been
 > removed from Keras, so the notebook uses `predict()` for probabilities and `max.col(...) - 1` for
@@ -136,6 +141,23 @@ was called a plane with 97.9% confidence. Every error points the same way.
 | 200 | 32 | 1 | 0.5833 | 3 of 12 |
 | 200 | 4 | 3 | **0.6667** | 4 of 12 |
 
+**Improving the accuracy — transfer learning (section 15)**
+
+Accuracy is judged by leave-one-out cross-validation over all 12 images, since a 2-image test set
+cannot tell a good model from a lucky one. The classifier is held constant throughout — same
+256-128-2 network, same RMSprop, same 30 epochs, same batch size. **Only the input representation
+changes.**
+
+| Representation | Features/image | LOOCV accuracy | Cars found |
+|---|---|---|---|
+| Raw pixels 28×28×3 (the video) | 2352 | 0.5833 | 1 of 6 |
+| VGG16 architecture, **random** weights (control) | 512 | 0.5000 | 3 of 6 |
+| **VGG16 features, ImageNet weights** | 512 | **1.0000** | **6 of 6** |
+
+On the video's own train/test split the transfer-learning model reaches **1.00 training and 1.00 test
+accuracy** — and unlike the baseline, leave-one-out confirms it classifies all 12 images correctly
+rather than getting the lucky two right.
+
 ## Conclusion
 The pipeline reproduces the video faithfully and the parameter count matches exactly. The accuracy,
 however, does not reproduce — and section 13 shows why rather than guessing. With a **2-image test
@@ -149,6 +171,22 @@ setting is under-trained (batch 32 > 10 images means one gradient update per epo
 the real problem: **12 images described by 2352 raw pixel values each** gives 196× more features than
 examples, so nothing the network learns transfers to a new picture.
 
-The fix is more images, a convolutional network instead of a dense one, data augmentation, and above
-all **transfer learning** from a pre-trained model such as ResNet50 or VGG16 — the standard approach
-when only a handful of images are available.
+**The fix, implemented and measured in section 15, is transfer learning.** Replacing the raw pixels
+with the 512 features VGG16 produces after training on 1.2 million ImageNet photographs lifts
+leave-one-out accuracy from **0.5833 to 1.0000** — every image correct, all 6 cars found — without
+changing the classifier, the optimiser or the number of epochs.
+
+The **random-weights control** is what makes this conclusive: the identical VGG16 architecture with
+untrained weights scores **0.5000**, i.e. chance. So the gain is not explained by the deeper network,
+the larger 224×224 input or the smaller feature count — it comes specifically from the knowledge
+transferred from ImageNet. The PCA plots show the same thing visually: planes and cars are mixed
+together in raw-pixel space but fall into two clearly separated groups in VGG16 feature space, before
+any training happens at all.
+
+With a dataset this small, how the data is represented matters far more than the size of the network,
+the number of epochs or the choice of optimiser — and an accuracy figure from a 2-image test set is
+not a measurement at all.
+
+**If taken further:** collect hundreds of images per class rather than six; fine-tune the last VGG16
+block instead of freezing all of it; add data augmentation (flips, shifts, small rotations); and
+always report cross-validated accuracy rather than a single small split.
